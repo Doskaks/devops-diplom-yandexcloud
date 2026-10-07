@@ -141,3 +141,857 @@
 6. Ссылка на тестовое приложение и веб интерфейс Grafana с данными доступа.
 7. Все репозитории рекомендуется хранить на одном ресурсе (github, gitlab)
 
+__________________________________________________________________
+
+### Решение:
+
+# Дипломный проект DevOps в Yandex Cloud
+
+## О проекте
+
+Полный цикл DevOps: от создания облачной инфраструктуры через Terraform до автоматического CI/CD с деплоем в Kubernetes.
+
+**Стек технологий:**
+- **Terraform** — инфраструктура как код
+- **Kubespray** — установка self-hosted Kubernetes
+- **NGINX Ingress Controller** — маршрутизация трафика
+- **kube-prometheus** — мониторинг (Prometheus, Grafana, Alertmanager)
+- **GitLab CI/CD** — автоматизация сборки и деплоя
+- **Yandex Container Registry** — хранение Docker-образов
+
+---
+
+## 📁 Структура репозиториев
+
+Все репозитории на **GitLab** (или GitHub):
+
+| Репозиторий | Описание | Ссылка |
+|-------------|----------|--------|
+| **terraform** | Инфраструктура + Terraform pipeline | `gitlab.com/Doskaks/terraform` |
+| **test-app** | Тестовое приложение + CI/CD | `gitlab.com/Doskaks/test-app` |
+
+**Локальная структура проекта:**
+
+```
+devops-diplom-yandexcloud/
+├── kube-prometheus/          # Чужой репозиторий (клонируется отдельно)
+├── kubespray/                # Чужой репозиторий (клонируется отдельно)
+├── terraform/                # ← Репозиторий terraform
+│   ├── bootstrap/            # S3, KMS, Container Registry
+│   │   ├── .gitignore
+│   │   ├── main.tf
+│   │   ├── outputs.tf
+│   │   ├── variables.tf
+│   │   └── versions.tf
+│   ├── infrastructure/       # VPC, ВМ, K8s
+│   │   ├── .gitignore
+│   │   ├── backend.tf
+│   │   ├── compute.tf
+│   │   ├── inventory.tf
+│   │   ├── kubespray_vars.tf
+│   │   ├── nat.tf
+│   │   ├── outputs.tf
+│   │   ├── providers.tf
+│   │   ├── security-groups.tf
+│   │   ├── service-accounts.tf
+│   │   ├── static-ip.tf
+│   │   ├── variables.tf
+│   │   ├── versions.tf
+│   │   ├── vpc.tf
+│   │   ├── id_rsa.pub        # Публичный SSH-ключ (для CI)
+│   │   └── templates/
+│   │       ├── hosts.yaml.tpl
+│   │       └── k8s-cluster-extra.yml.tpl
+│   ├── .gitignore
+│   ├── .gitlab-ci.yml        # Terraform pipeline
+│   └── .terraformrc          # Зеркало Terraform
+│
+└── test-app/                 # ← Репозиторий test-app
+    ├── k8s/
+    │   ├── deployment.yaml
+    │   ├── ingress.yaml
+    │   ├── service.yaml
+    │   └── monitoring/
+    │       └── grafana-ingress.yaml
+    ├── .gitignore
+    ├── .gitlab-ci.yml        # CI/CD pipeline
+    ├── Dockerfile
+    ├── index.html
+    ├── nginx.conf
+    ├── README.md
+    ├── script.js
+    └── style.css
+```
+
+---
+
+## 🎯 Цели проекта
+
+1. ✅ Подготовить облачную инфраструктуру на базе **Яндекс.Облако**
+2. ✅ Запустить и сконфигурировать **Kubernetes кластер**
+3. ✅ Установить и настроить **систему мониторинга**
+4. ✅ Настроить и автоматизировать сборку тестового приложения с использованием **Docker-контейнеров**
+5. ✅ Настроить **CI** для автоматической сборки и тестирования
+6. ✅ Настроить **CD** для автоматического развёртывания приложения
+
+---
+
+## 📋 Этап 1. Создание облачной инфраструктуры
+
+### 1.1. Ручной bootstrap (консоль Yandex Cloud)
+
+**Создание сервисного аккаунта:**
+
+1. Yandex Cloud → **Identity and Access Management** → **Сервисные аккаунты** → **Создать**.
+2. Имя: `terraform-sa`.
+3. Назначить роли:
+   - `k8s.editor`
+   - `iam.serviceAccounts.user`
+   - `iam.serviceAccounts.admin`
+   - `vpc.privateAdmin`
+   - `vpc.publicAdmin`
+   - `vpc.securityGroups.admin`
+   - `storage.admin`
+   - `container-registry.admin`
+   - `kms.editor`
+
+**Создание ключей:**
+
+- **Авторизованный ключ** → `~/.yc/authorized_key.json` (chmod 600).
+- **Статический ключ** → `~/.yc/secrets/static-key.txt` (chmod 600).
+
+**Настройка CLI:**
+
+```bash
+yc config profile create sa-profile
+yc config profile activate sa-profile
+yc config set service-account-key ~/.yc/authorized_key.json
+yc config set cloud-id <cloud_id>
+yc config set folder-id <folder_id>
+```
+
+**Настройка зеркала Terraform** (`~/.terraformrc`):
+
+```hcl
+provider_installation {
+  network_mirror {
+    url = "https://terraform-mirror.yandexcloud.net/"
+    include = [
+      "registry.terraform.io/yandex-cloud/yandex",
+      "registry.terraform.io/hashicorp/null",
+      "registry.terraform.io/hashicorp/local"
+    ]
+  }
+  direct {
+    exclude = ["registry.terraform.io/*/*"]
+  }
+}
+```
+
+### 1.2. Terraform bootstrap
+
+**Цель:** создать S3-бакет для стейта, KMS-ключ, Container Registry.
+
+```bash
+cd terraform/bootstrap
+terraform init
+terraform apply
+```
+
+**Создаётся:**
+
+| Ресурс | Назначение |
+|--------|-----------|
+| `yandex_kms_symmetric_key` | Шифрование бакета |
+| `yandex_storage_bucket` | Хранение `terraform.tfstate` |
+| `yandex_container_registry` | Docker-образы приложения |
+
+**Сохранённые значения:**
+- `state_bucket_name` — имя бакета для backend.
+- `container_registry_id` — ID реестра.
+
+### 1.3. Terraform infrastructure
+
+**Цель:** создать VPC, 3 ВМ, статический IP, security group.
+
+```bash
+cd terraform/infrastructure
+terraform init
+terraform apply
+```
+
+**Создаётся:**
+
+| Ресурс | Назначение |
+|--------|-----------|
+| `yandex_vpc_network` | VPC-сеть |
+| `yandex_vpc_subnet` × 3 | Подсети в зонах a, b, d |
+| `yandex_vpc_security_group` | Правила для K8s, SSH, HTTP, NodePort |
+| `yandex_vpc_gateway` + `route_table` | NAT для воркеров |
+| `yandex_vpc_address` | **Статический IP** для мастера |
+| `yandex_compute_instance.k8s_master` | Мастер-нода (standard-v3, preemptible) |
+| `yandex_compute_instance.k8s_workers` × 2 | Worker-ноды |
+| `yandex_iam_service_account` × 2 | SA для мастера и нод |
+| `null_resource.ansible_inventory` | Генерация `hosts.yaml` |
+| `null_resource.kubespray_k8s_cluster_extra` | Генерация `k8s-cluster-extra.yml` |
+
+**Backend** — S3-бакет из bootstrap:
+
+```hcl
+terraform {
+  backend "s3" {
+    endpoint = "storage.yandexcloud.net"
+    bucket   = "terraform-state-<folder_id>"
+    key      = "infrastructure/terraform.tfstate"
+    region   = "ru-central1"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_s3_checksum            = true
+  }
+}
+```
+
+**Ожидаемый результат:**
+- ✅ Terraform создаёт инфраструктуру без ручных действий.
+- ✅ Стейт хранится в S3-бакете.
+- ✅ `terraform destroy` + `terraform apply` работают без ручных правок.
+
+---
+
+## 📋 Этап 2. Создание Kubernetes кластера
+
+### 2.1. Установка Kubespray
+
+```bash
+cd ~/Дипломный\ проект/devops-diplom-yandexcloud
+git clone https://github.com/kubernetes-sigs/kubespray.git
+cd kubespray
+
+# Создать venv с Python 3.11
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2.2. Подготовка inventory
+
+```bash
+# Скопировать sample
+cp -rfp inventory/sample inventory/mycluster
+
+# Скопировать group_vars
+cp -rfp inventory/sample/group_vars inventory/mycluster/
+
+# Проверить hosts.yaml (генерируется Terraform)
+cat inventory/mycluster/hosts.yaml
+```
+
+**`hosts.yaml`** — генерируется Terraform:
+- `k8s-master-1` → публичный IP (bastion).
+- `k8s-worker-1/2` → внутренние IP.
+- ProxyJump через мастер.
+
+### 2.3. Запуск Kubespray
+
+```bash
+source .venv/bin/activate
+
+# Проверка
+ansible -i inventory/mycluster/hosts.yaml all -m ping
+
+# Установка K8s (15-25 мин)
+ansible-playbook -i inventory/mycluster/hosts.yaml --become --become-user=root cluster.yml
+```
+
+### 2.4. Исправление SAN сертификата (баг Kubespray v2.28)
+
+**Проблема:** в SAN сертификата нет публичного IP.
+
+**Решение:** плейбук `fix-cert.yml`:
+
+```yaml
+---
+- name: Перегенерация сертификата API-сервера
+  hosts: kube_control_plane
+  become: yes
+  vars:
+    master_public_ip: "{{ hostvars[inventory_hostname]['ansible_host'] }}"
+    master_internal_ip: "{{ hostvars[inventory_hostname]['ip'] }}"
+    k8s_version: "v1.32.8"
+
+  tasks:
+    - name: Создать конфиг kubeadm
+      copy:
+        dest: /tmp/kubeadm-certs-fix.yaml
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: ClusterConfiguration
+          kubernetesVersion: {{ k8s_version }}
+          apiServer:
+            certSANs:
+            - "{{ master_public_ip }}"
+            - "{{ master_internal_ip }}"
+            - "10.233.0.1"
+            - "127.0.0.1"
+            - "::1"
+            - "k8s-master-1"
+            - "kubernetes"
+            - "kubernetes.default"
+            - "kubernetes.default.svc"
+            - "kubernetes.default.svc.cluster.local"
+            - "localhost"
+
+    - name: Удалить старые сертификаты
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/kubernetes/pki/apiserver.crt
+        - /etc/kubernetes/pki/apiserver.key
+
+    - name: Сгенерировать новый сертификат
+      command: kubeadm init phase certs apiserver --config /tmp/kubeadm-certs-fix.yaml
+
+    - name: Найти ID пода
+      shell: crictl pods | grep kube-apiserver | awk '{print $1}' | head -1
+      register: api_pod_id
+
+    - name: Перезапустить API-сервер
+      shell: |
+        crictl stopp {{ api_pod_id.stdout }}
+        crictl rmp {{ api_pod_id.stdout }}
+      when: api_pod_id.stdout != ""
+
+    - name: Обновить ConfigMap
+      command: kubeadm init phase upload-config kubeadm --config /tmp/kubeadm-certs-fix.yaml
+```
+
+**Запуск:**
+
+```bash
+ansible-playbook -i inventory/mycluster/hosts.yaml fix-cert.yml
+```
+
+### 2.5. Получение kubeconfig
+
+```bash
+MASTER_IP=$(cd ../terraform/infrastructure && terraform output -raw master_static_ip)
+
+mkdir -p ~/.kube
+ssh -i ~/.ssh/id_rsa ubuntu@$MASTER_IP "sudo cat /etc/kubernetes/admin.conf" > ~/.kube/config
+chmod 600 ~/.kube/config
+sed -i "s|server: https://[0-9.]*:6443|server: https://${MASTER_IP}:6443|" ~/.kube/config
+```
+
+### 2.6. Проверка
+
+```bash
+kubectl get nodes
+# NAME           STATUS   ROLES           AGE   VERSION
+# k8s-master-1   Ready    control-plane   19m   v1.32.8
+# k8s-worker-1   Ready    <none>          18m   v1.32.8
+# k8s-worker-2   Ready    <none>          18m   v1.32.8
+
+kubectl get pods --all-namespaces
+```
+
+**Ожидаемый результат:**
+- ✅ Работоспособный K8s кластер (3 ноды).
+- ✅ `~/.kube/config` настроен.
+- ✅ `kubectl get pods --all-namespaces` работает.
+
+---
+
+## 📋 Этап 3. Создание тестового приложения
+
+### 3.1. Приложение
+
+**Файлы приложения** (`test-app/`):
+
+| Файл | Назначение |
+|------|-----------|
+| `index.html` | Калькулятор асфальтирования (статическая страница) |
+| `style.css` | Стили |
+| `script.js` | Логика калькулятора |
+| `nginx.conf` | Конфиг nginx (порт 80, `/health`) |
+| `Dockerfile` | Сборка образа на базе `nginx:alpine` |
+| `README.md` | Описание |
+
+**`Dockerfile`:**
+
+```dockerfile
+FROM nginx:alpine
+
+LABEL maintainer="Nikolay"
+LABEL description="Калькулятор асфальтирования — дипломный проект DevOps"
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY index.html /usr/share/nginx/html/index.html
+COPY style.css /usr/share/nginx/html/style.css
+COPY script.js /usr/share/nginx/html/script.js
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### 3.2. Сборка и push образа
+
+```bash
+cd ~/Дипломный\ проект/devops-diplom-yandexcloud/test-app
+
+# Аутентификация
+yc container registry configure-docker
+
+# Сборка
+docker build -t cr.yandex/crpsj2ejeasjt6e1fna1/test-app:v1.0.0 .
+
+# Push
+docker push cr.yandex/crpsj2ejeasjt6e1fna1/test-app:v1.0.0
+```
+
+### 3.3. Git-репозиторий
+
+```bash
+git init
+git branch -M main
+git remote add origin https://gitlab.com/Doskaks/test-app.git
+
+git add .
+git commit -m "Initial commit: test-app calculator"
+git push -u origin main
+```
+
+**Ожидаемый результат:**
+- ✅ Git-репозиторий `test-app`.
+- ✅ Docker-образ в **Yandex Container Registry**.
+
+---
+
+## 📋 Этап 4. Мониторинг и деплой приложения
+
+### 4.1. Установка NGINX Ingress Controller
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --create-namespace \
+  --set controller.kind=DaemonSet \
+  --set controller.hostPort.enabled=true \
+  --set controller.hostPort.ports.http=80 \
+  --set controller.hostPort.ports.https=443 \
+  --set controller.tolerations[0].key=node-role.kubernetes.io/control-plane \
+  --set controller.tolerations[0].operator=Exists \
+  --set controller.tolerations[0].effect=NoSchedule
+```
+
+**Проверка:**
+
+```bash
+kubectl get pods -n ingress-nginx -o wide
+# 3 пода Running на всех нодах (включая мастер)
+```
+
+### 4.2. Деплой test-app
+
+```bash
+cd ~/Дипломный\ проект/devops-diplom-yandexcloud/test-app
+
+kubectl create namespace test-app
+
+kubectl create secret docker-registry yandex-registry-secret \
+  --namespace test-app \
+  --docker-server=cr.yandex \
+  --docker-username=json_key \
+  --docker-password="$(cat ~/.yc/authorized_key.json)" \
+  --docker-email=unused
+
+kubectl apply -f k8s/
+```
+
+**Проверка:**
+
+```bash
+kubectl get pods -n test-app
+kubectl get ingress -n test-app
+curl -I http://62.84.118.27/
+# HTTP/1.1 200 OK
+```
+
+### 4.3. Установка kube-prometheus
+
+```bash
+cd ~/Дипломный\ проект/devops-diplom-yandexcloud
+git clone https://github.com/prometheus-operator/kube-prometheus.git
+cd kube-prometheus
+
+kubectl apply --server-side -f manifests/setup
+kubectl wait --for condition=Established --all CustomResourceDefinition --namespace=monitoring
+kubectl apply -f manifests/
+```
+
+**Проверка:**
+
+```bash
+kubectl get pods -n monitoring
+# Все поды Running: Prometheus, Grafana, Alertmanager, Node Exporter
+```
+
+### 4.4. Настройка Grafana
+
+**Удалить NetworkPolicy:**
+
+```bash
+kubectl delete networkpolicy grafana -n monitoring
+```
+
+**Настроить `grafana.ini`:**
+
+```bash
+cat > /tmp/grafana.ini <<'EOF'
+[server]
+root_url = https://62.84.118.27/grafana
+serve_from_sub_path = true
+EOF
+
+GRAFANA_INI_B64=$(cat /tmp/grafana.ini | base64 -w0)
+kubectl patch secret grafana-config -n monitoring \
+  -p "{\"data\":{\"grafana.ini\":\"${GRAFANA_INI_B64}\"}}"
+
+kubectl rollout restart deployment grafana -n monitoring
+```
+
+**Создать TLS-сертификат:**
+
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /tmp/tls.key -out /tmp/tls.crt \
+  -subj "/CN=62.84.118.27" \
+  -addext "subjectAltName=IP:62.84.118.27"
+
+kubectl create secret tls grafana-tls \
+  --cert=/tmp/tls.crt --key=/tmp/tls.key -n monitoring
+```
+
+**Создать Ingress** (`k8s/monitoring/grafana-ingress.yaml`):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: monitoring
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "62.84.118.27"
+      secretName: grafana-tls
+  rules:
+    - http:
+        paths:
+          - path: /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000
+```
+
+```bash
+kubectl apply -f k8s/monitoring/grafana-ingress.yaml
+```
+
+### 4.5. Проверка
+
+```bash
+# Grafana
+curl -k -I https://62.84.118.27/grafana/
+# HTTP/2 302
+
+# test-app
+curl -I http://62.84.118.27/
+# HTTP/1.1 200
+
+# Prometheus (port-forward)
+kubectl port-forward -n monitoring svc/prometheus-k8s 9090:9090
+# http://localhost:9090
+```
+
+**Пароль Grafana:**
+
+```bash
+kubectl get secret grafana-config -n monitoring -o jsonpath='{.data.grafana\.ini}' | base64 -d
+```
+
+**Ожидаемый результат:**
+- ✅ HTTP-доступ к Grafana на 80 порту.
+- ✅ Дашборды K8s.
+- ✅ HTTP-доступ к test-app на 80 порту.
+- ✅ CI/CD-terraform pipeline.
+
+---
+
+## 📋 Этап 5. Terraform pipeline
+
+### 5.1. GitLab Variables
+
+GitLab → `terraform` → **Настройки** → **CI/CD** → **Переменные**:
+
+| Key | Value | Type | Visibility | Protect |
+|-----|-------|------|-----------|---------|
+| `YC_KEY` | base64 от `authorized_key.json` | Variable | Visible | ❌ |
+| `AWS_ACCESS_KEY_ID` | из `static-key.txt` | Variable | Visible | ❌ |
+| `AWS_SECRET_ACCESS_KEY` | из `static-key.txt` | Variable | Visible | ❌ |
+| `TF_VAR_cloud_id` | `yc config get cloud-id` | Variable | Visible | ❌ |
+| `TF_VAR_folder_id` | `yc config get folder-id` | Variable | Visible | ❌ |
+| `TF_VAR_ssh_public_key_path` | `${CI_PROJECT_DIR}/infrastructure/id_rsa.pub` | Variable | Visible | ❌ |
+| `TF_VAR_service_account_key_file` | `/root/.yc/authorized_key.json` | Variable | Visible | ❌ |
+
+**Получить base64:**
+
+```bash
+cat ~/.yc/authorized_key.json | jq -c . | base64 -w0
+```
+
+### 5.2. `.gitlab-ci.yml`
+
+```yaml
+---
+stages:
+  - validate
+  - plan
+  - apply
+
+variables:
+  TF_ROOT: "${CI_PROJECT_DIR}/infrastructure"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_CLI_CONFIG_FILE: "${CI_PROJECT_DIR}/.terraformrc"
+
+default:
+  image:
+    name: hashicorp/terraform:1.9.7
+    entrypoint: [""]
+  before_script:
+    - mkdir -p ~/.yc
+    - echo "$YC_KEY" | base64 -d > ~/.yc/authorized_key.json
+    - chmod 600 ~/.yc/authorized_key.json
+    - export YC_SERVICE_ACCOUNT_KEY_FILE=~/.yc/authorized_key.json
+    - cd "${TF_ROOT}"
+    - terraform init
+
+validate:
+  stage: validate
+  script:
+    - terraform fmt --recursive --check
+    - terraform validate
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+plan:
+  stage: plan
+  script:
+    - terraform plan -out=tfplan
+  artifacts:
+    paths:
+      - ${TF_ROOT}/tfplan
+    expire_in: 1 day
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+apply:
+  stage: apply
+  dependencies:
+    - plan
+  script:
+    - terraform apply -auto-approve tfplan
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: false
+```
+
+### 5.3. Self-hosted GitLab Runner
+
+```bash
+docker run -d --name gitlab-runner --restart always \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v gitlab-runner-config:/etc/gitlab-runner \
+  gitlab/gitlab-runner:latest
+
+# Регистрация
+docker exec -it gitlab-runner gitlab-runner register \
+  --non-interactive \
+  --url "https://gitlab.com/" \
+  --token "glrt-..." \
+  --executor "docker" \
+  --docker-image "alpine:latest" \
+  --description "terraform-runner"
+```
+
+### 5.4. Push и проверка
+
+```bash
+cd terraform
+git add .
+git commit -m "Add Terraform CI/CD pipeline"
+git push
+```
+
+**Ожидаемый результат:**
+- ✅ `validate` — Passed.
+- ✅ `plan` — Passed.
+- ✅ `apply` — Manual.
+
+---
+
+## 📋 Этап 6. CI/CD для приложения
+
+### 6.1. GitLab Variables
+
+GitLab → `test-app` → **Настройки** → **CI/CD** → **Переменные**:
+
+| Key | Value | Type | Visibility | Protect |
+|-----|-------|------|-----------|---------|
+| `YC_KEY` | base64 от `authorized_key.json` | Variable | Visible | ❌ |
+| `REGISTRY_ID` | `crpsj2ejeasjt6e1fna1` | Variable | Visible | ❌ |
+| `KUBE_CONFIG` | base64 от `~/.kube/config` | Variable | Visible | ❌ |
+
+### 6.2. `.gitlab-ci.yml`
+
+```yaml
+---
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image:
+    name: docker:24
+    entrypoint: [""]
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - echo "$YC_KEY" | base64 -d > /tmp/key.json
+    - cat /tmp/key.json | docker login --username json_key --password-stdin cr.yandex
+    - export IMAGE_NAME="cr.yandex/${REGISTRY_ID}/test-app"
+    - export IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+  script:
+    - docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+    - docker push "${IMAGE_NAME}:${IMAGE_TAG}"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+deploy:
+  stage: deploy
+  image:
+    name: alpine/k8s:1.31.0
+    entrypoint: [""]
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+    - chmod 600 ~/.kube/config
+    - export IMAGE_NAME="cr.yandex/${REGISTRY_ID}/test-app"
+    - export IMAGE_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
+  script:
+    - kubectl set image deployment/test-app test-app="${IMAGE_NAME}:${IMAGE_TAG}" -n test-app
+    - kubectl rollout status deployment/test-app -n test-app --timeout=120s
+  rules:
+    - if: $CI_COMMIT_TAG
+  environment:
+    name: production
+    url: http://62.84.118.27
+```
+
+### 6.3. Self-hosted Runner с `privileged`
+
+```bash
+docker exec -it gitlab-runner gitlab-runner register \
+  --non-interactive \
+  --url "https://gitlab.com/" \
+  --token "glrt-..." \
+  --executor "docker" \
+  --docker-image "alpine:latest" \
+  --description "test-app-runner"
+
+# Включить privileged
+docker exec -it gitlab-runner sh
+sed -i 's/privileged = false/privileged = true/' /etc/gitlab-runner/config.toml
+exit
+
+docker restart gitlab-runner
+```
+
+### 6.4. Push и проверка
+
+```bash
+cd test-app
+
+git add .gitlab-ci.yml
+git commit -m "Add CI/CD pipeline"
+git push
+
+# Создать тег
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**Ожидаемый результат:**
+- ✅ При коммите — `build` (сборка + push образа).
+- ✅ При теге — `build` + `deploy` (деплой в K8s).
+
+---
+
+## 📌 Итоговые ссылки
+
+| Сервис | Ссылка / Доступ |
+|--------|-----------------|
+| **test-app** | http://62.84.118.27/ |
+| **Grafana** | https://62.84.118.27/grafana/ |
+| **Логин/пароль Grafana** | `admin` / `prom-operator` |
+| **Репозиторий `terraform`** | `gitlab.com/Doskaks/terraform` |
+| **Репозиторий `test-app`** | `gitlab.com/Doskaks/test-app` |
+| **Container Registry** | `cr.yandex/crpsj2ejeasjt6e1fna1/test-app` |
+
+---
+
+## ✅ Соответствие требованиям сдачи
+
+| # | Требование | Статус |
+|---|-----------|--------|
+| 1 | Репозиторий с Terraform | ✅ `terraform` |
+| 2 | Скриншоты CI/CD-terraform pipeline | ✅ Этап 5 |
+| 3 | Репозиторий с Ansible | ⚠️ Не нужен (self-hosted Kubespray) |
+| 4 | Репозиторий с Dockerfile + ссылка на образ | ✅ `test-app` |
+| 5 | Репозиторий с конфигурацией K8s | ✅ `test-app/k8s/` |
+| 6 | Ссылка на приложение и Grafana | ✅ см. выше |
+| 7 | Все репозитории на одном ресурсе | ✅ GitLab |
+
+---
+
+## 🎯 Заключение
+
+Проект **полностью автоматизирован**:
+
+1. **Инфраструктура** — Terraform создаёт VPC, 3 ВМ, статический IP, KMS, S3, Container Registry.
+2. **Kubernetes** — устанавливается через **Kubespray** (self-hosted, 3 ноды). Ingress Controller (NGINX, DaemonSet с tolerations).
+3. **Приложение** — статический сайт (nginx + HTML/CSS/JS) в Docker-образе.
+4. **Мониторинг** — **kube-prometheus** (Prometheus, Grafana, Alertmanager, Node Exporter).
+5. **Terraform pipeline** — GitLab CI/CD `validate → plan → apply`.
+6. **CI/CD приложения** — GitLab CI/CD `build → deploy` (при теге).
