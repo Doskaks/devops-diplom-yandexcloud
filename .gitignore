@@ -124,3 +124,9 @@ ansible_collections
 # kubernetes
 kubespray/
 kube-prometheus/
+
+# terraform
+terraform/
+
+# app
+test-app/
