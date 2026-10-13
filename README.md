@@ -165,9 +165,8 @@ __________________________________________________________________
 
 | Репозиторий | Описание | Ссылка |
 |-------------|----------|--------|
-| **terraform** | Инфраструктура + Terraform pipeline | [Репозиторий Terraform на GitLab](https://gitlab.com/Doskaks/terraform)
- |
-| **test-app** | Тестовое приложение + CI/CD | [Репозиторий test-app на GitLab](https://gitlab.com/Doskaks/terraform) |
+| **terraform** | Инфраструктура + Terraform pipeline | [Репозиторий Terraform на GitLab](https://gitlab.com/Doskaks/terraform)|
+| **test-app** | Тестовое приложение + CI/CD | [Репозиторий test-app на GitLab](https://gitlab.com/Doskaks/test-app) |
 
 **Локальная структура проекта:**
 
