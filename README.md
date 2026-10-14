@@ -153,7 +153,7 @@ __________________________________________________________________
 - **Terraform** — инфраструктура как код
 - **Kubespray** — установка self-hosted Kubernetes
 - **NGINX Ingress Controller** — маршрутизация трафика
-- **kube-prometheus** — мониторинг (Prometheus, Grafana, Alertmanager)
+- **kube-prometheus** — мониторинг (Prometheus, Grafana)
 - **GitLab CI/CD** — автоматизация сборки и деплоя
 - **Yandex Container Registry** — хранение Docker-образов
 
@@ -161,7 +161,7 @@ __________________________________________________________________
 
 ## 📁 Структура репозиториев
 
-Все репозитории на **GitLab** (или GitHub):
+Все репозитории на **GitLab**:
 
 | Репозиторий | Описание | Ссылка |
 |-------------|----------|--------|
@@ -170,6 +170,7 @@ __________________________________________________________________
 
 **Локальная структура проекта:**
 
+![Каталоги](???)
 ```
 devops-diplom-yandexcloud/
 ├── kube-prometheus/          # Чужой репозиторий (клонируется отдельно)
@@ -236,9 +237,13 @@ devops-diplom-yandexcloud/
 
 ## 📋 Этап 1. Создание облачной инфраструктуры
 
+![YC Console](???)
+
 ### 1.1. Ручной bootstrap (консоль Yandex Cloud)
 
 **Создание сервисного аккаунта:**
+
+![SA](???)
 
 1. Yandex Cloud → **Identity and Access Management** → **Сервисные аккаунты** → **Создать**.
 2. Имя: `terraform-sa`.
@@ -288,6 +293,8 @@ provider_installation {
 
 ### 1.2. Terraform bootstrap
 
+![S3-бакет](???)
+
 **Цель:** создать S3-бакет для стейта, KMS-ключ, Container Registry.
 
 ```bash
@@ -309,6 +316,14 @@ terraform apply
 - `container_registry_id` — ID реестра.
 
 ### 1.3. Terraform infrastructure
+
+![VPC](???)
+
+![ВМ](???)
+
+![IP](???)
+
+![Security group](???)
 
 **Цель:** создать VPC, 3 ВМ, статический IP, security group.
 
@@ -503,6 +518,8 @@ kubectl get pods --all-namespaces
 
 ## 📋 Этап 3. Создание тестового приложения
 
+![Сайт калькулятор (test-app)](???)
+
 ### 3.1. Приложение
 
 **Файлы приложения** (`test-app/`):
@@ -568,9 +585,12 @@ git push -u origin main
 - ✅ Git-репозиторий `test-app`.
 - ✅ Docker-образ в **Yandex Container Registry**.
 
+![CR_Docker-образы](???)
 ---
 
 ## 📋 Этап 4. Мониторинг и деплой приложения
+
+![Grafana](???)
 
 ### 4.1. Установка NGINX Ingress Controller
 
@@ -742,6 +762,8 @@ kubectl get secret grafana-config -n monitoring -o jsonpath='{.data.grafana\.ini
 
 ## 📋 Этап 5. Terraform pipeline
 
+![Terraform pipeline](???)
+
 ### 5.1. GitLab Variables
 
 GitLab → `terraform` → **Настройки** → **CI/CD** → **Переменные**:
@@ -856,6 +878,8 @@ git push
 
 ## 📋 Этап 6. CI/CD для приложения
 
+![CI_CD](???)
+
 ### 6.1. GitLab Variables
 
 GitLab → `test-app` → **Настройки** → **CI/CD** → **Переменные**:
@@ -962,14 +986,14 @@ git push origin v1.0.0
 |--------|-----------------|
 | **test-app** | http://62.84.118.27/ |
 | **Grafana** | https://62.84.118.27/grafana/ |
-| **Логин/пароль Grafana** | `admin` / `prom-operator` |
+| **Логин/пароль Grafana** | `admin` / `admin` |
 | **Репозиторий `terraform`** | `gitlab.com/Doskaks/terraform` |
 | **Репозиторий `test-app`** | `gitlab.com/Doskaks/test-app` |
 | **Container Registry** | `cr.yandex/crpsj2ejeasjt6e1fna1/test-app` |
 
 ---
 
-## ✅ Соответствие требованиям сдачи
+## ✅ Соответствие требованиям сдачи диплома
 
 | # | Требование | Статус |
 |---|-----------|--------|
@@ -990,6 +1014,6 @@ git push origin v1.0.0
 1. **Инфраструктура** — Terraform создаёт VPC, 3 ВМ, статический IP, KMS, S3, Container Registry.
 2. **Kubernetes** — устанавливается через **Kubespray** (self-hosted, 3 ноды). Ingress Controller (NGINX, DaemonSet с tolerations).
 3. **Приложение** — статический сайт (nginx + HTML/CSS/JS) в Docker-образе.
-4. **Мониторинг** — **kube-prometheus** (Prometheus, Grafana, Alertmanager, Node Exporter).
+4. **Мониторинг** — **kube-prometheus** (Prometheus, Grafana, Node Exporter).
 5. **Terraform pipeline** — GitLab CI/CD `validate → plan → apply`.
 6. **CI/CD приложения** — GitLab CI/CD `build → deploy` (при теге).
