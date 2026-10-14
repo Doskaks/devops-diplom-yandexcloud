@@ -170,7 +170,7 @@ __________________________________________________________________
 
 **Локальная структура проекта:**
 
-![Каталоги](???)
+![Каталоги](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/%D0%9A%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3%D0%B8.jpg)
 ```
 devops-diplom-yandexcloud/
 ├── kube-prometheus/          # Чужой репозиторий (клонируется отдельно)
@@ -237,13 +237,13 @@ devops-diplom-yandexcloud/
 
 ## 📋 Этап 1. Создание облачной инфраструктуры
 
-![YC Console](???)
+![YC Console](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/YC%20Console.jpg)
 
 ### 1.1. Ручной bootstrap (консоль Yandex Cloud)
 
 **Создание сервисного аккаунта:**
 
-![SA](???)
+![SA](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/SA.jpg)
 
 1. Yandex Cloud → **Identity and Access Management** → **Сервисные аккаунты** → **Создать**.
 2. Имя: `terraform-sa`.
@@ -293,7 +293,7 @@ provider_installation {
 
 ### 1.2. Terraform bootstrap
 
-![S3-бакет](???)
+![S3-бакет](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/S3-%D0%B1%D0%B0%D0%BA%D0%B5%D1%82.jpg)
 
 **Цель:** создать S3-бакет для стейта, KMS-ключ, Container Registry.
 
@@ -317,13 +317,13 @@ terraform apply
 
 ### 1.3. Terraform infrastructure
 
-![VPC](???)
+![VPC](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/VPC.jpg)
 
-![ВМ](???)
+![ВМ](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/%D0%92%D0%9C.jpg)
 
-![IP](???)
+![IP](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/IP.jpg)
 
-![Security group](???)
+![Security group](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/Security%20group.jpg)
 
 **Цель:** создать VPC, 3 ВМ, статический IP, security group.
 
@@ -518,7 +518,7 @@ kubectl get pods --all-namespaces
 
 ## 📋 Этап 3. Создание тестового приложения
 
-![Сайт калькулятор (test-app)](???)
+![Сайт калькулятор (test-app)](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/%D0%A1%D0%B0%D0%B9%D1%82%20%D0%BA%D0%B0%D0%BB%D1%8C%D0%BA%D1%83%D0%BB%D1%8F%D1%82%D0%BE%D1%80%20(test-app).jpg)
 
 ### 3.1. Приложение
 
@@ -585,12 +585,12 @@ git push -u origin main
 - ✅ Git-репозиторий `test-app`.
 - ✅ Docker-образ в **Yandex Container Registry**.
 
-![CR_Docker-образы](???)
+![CR_Docker-образы](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/CR_Docker-%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D1%8B.jpg)
 ---
 
 ## 📋 Этап 4. Мониторинг и деплой приложения
 
-![Grafana](???)
+![Grafana](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/Grafana.jpg)
 
 ### 4.1. Установка NGINX Ingress Controller
 
@@ -762,7 +762,7 @@ kubectl get secret grafana-config -n monitoring -o jsonpath='{.data.grafana\.ini
 
 ## 📋 Этап 5. Terraform pipeline
 
-![Terraform pipeline](???)
+![Terraform pipeline](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/Terraform%20pipeline.jpg)
 
 ### 5.1. GitLab Variables
 
@@ -878,7 +878,7 @@ git push
 
 ## 📋 Этап 6. CI/CD для приложения
 
-![CI_CD](???)
+![CI_CD](https://github.com/Doskaks/devops-diplom-yandexcloud/blob/main/screenshots/CI_CD.jpg)
 
 ### 6.1. GitLab Variables
 
